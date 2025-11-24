@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>Mini WhatsApp</title>
+<style>
+body { font-family: Arial; background:#f1f1f1; margin:0; padding:0; }
+#loginBox, #chatBox { width:300px; margin:50px auto; }
+#chat { height:300px; overflow-y:auto; border:1px solid #ccc; padding:10px; background:white;}
+</style>
+</head>
+<body>
+
+<div id="loginBox">
+    <h2>Login</h2>
+    <input id="user" placeholder="Usuário"><br><br>
+    <input id="pass" placeholder="Senha" type="password"><br><br>
+    <button onclick="login()">Entrar</button>
+    <button onclick="signup()">Cadastrar</button>
+    <p id="msg"></p>
+</div>
+
+<div id="chatBox" style="display:none;">
+    <h2>Chat</h2>
+    <div id="chat"></div><br>
+    <input id="msgInput" placeholder="Mensagem..." style="width:80%">
+    <button onclick="sendMsg()">Enviar</button>
+    <br><br>
+    <button onclick="sendAudio()">🎤 Áudio</button>
+    <button onclick="sendVideo()">🎥 Vídeo</button>
+</div>
+
+<script>
+let ws;
+let username;
+
+// ---------------- LOGIN ----------------
+function login() {
+    fetch("/login", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({user: user.value, pass: pass.value})
+    })
+    .then(r=>r.json())
+    .then(d=>{
+        if(d.ok){
+            username = user.value;
+            startChat();
+        } else msg.innerText="Login inválido";
+    });
+}
+
+function signup() {
+    fetch("/signup", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({user: user.value, pass: pass.value})
+    })
+    .then(r=>r.json())
+    .then(d=> msg.innerText = d.msg );
+}
+
+// ---------------- CHAT ----------------
+function startChat(){
+    loginBox.style.display="none";
+    chatBox.style.display="block";
+
+    ws = new WebSocket(`wss://${location.host}`);
+
+    ws.onmessage = (e)=>{
+        let data = JSON.parse(e.data);
+
+        if(data.type === "text"){
+            chat.innerHTML += `<p><b>${data.user}:</b> ${data.msg}</p>`;
+        }
+
+        if(data.type === "audio"){
+            let audio = document.createElement("audio");
+            audio.controls = true;
+            audio.src = URL.createObjectURL(new Blob([data.blob]));
+            chat.appendChild(audio);
+        }
+
+        if(data.type === "video"){
+            let video = document.createElement("video");
+            video.controls = true;
+            video.src = URL.createObjectURL(new Blob([data.blob]));
+            video.width = 200;
+            chat.appendChild(video);
+        }
+
+        chat.scrollTop = chat.scrollHeight;
+    };
+}
+
+function sendMsg(){
+    ws.send(JSON.stringify({
+        type:"text",
+        user: username,
+        msg: msgInput.value
+    }));
+    msgInput.value="";
+}
+
+// ---------------- ÁUDIO ----------------
+async function sendAudio(){
+    let stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+    let recorder = new MediaRecorder(stream);
+    let chunks = [];
+    recorder.ondataavailable = e => chunks.push(e.data);
+    recorder.onstop = ()=>{
+        ws.send(JSON.stringify({ type:"audio", user:username, blob:chunks }));
+    };
+    recorder.start();
+    setTimeout(()=>recorder.stop(), 3000); // grava 3s
+}
+
+// ---------------- VÍDEO ----------------
+async function sendVideo(){
+    let stream = await navigator.mediaDevices.getUserMedia({ video:true });
+    let recorder = new MediaRecorder(stream);
+    let chunks = [];
+    recorder.ondataavailable = e => chunks.push(e.data);
+    recorder.onstop = ()=>{
+        ws.send(JSON.stringify({ type:"video", user:username, blob:chunks }));
+    };
+    recorder.start();
+    setTimeout(()=>recorder.stop(), 3000); // grava 3s
+}
+</script>
+
+</body>
+</html>
